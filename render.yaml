@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: ai-slot-booking
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run slot_booking_app.py --server.enableCORS false
+    plan: free
