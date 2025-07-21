@@ -16,29 +16,32 @@ doctor_df = pd.read_csv("doctors.csv")
 # User Input
 symptom = st.text_input("Enter your symptom or health issue:", "fever")
 patient_email = st.text_input("Enter your email to receive confirmation:")
-preferred_time = st.time_input("Preferred Time (optional):", None, disabled=True)
 
-if "booked" not in st.session_state:
+if "recommendations" not in st.session_state:
+    st.session_state.recommendations = []
+    st.session_state.doctor_message = ""
     st.session_state.booked = False
     st.session_state.booked_doctor = ""
     st.session_state.slot = ""
 
 if st.button("🔍 Find Doctors"):
     message, recommendations = recommend_doctors(symptom)
-    st.subheader(message)
+    st.session_state.recommendations = recommendations
+    st.session_state.doctor_message = message
+    st.session_state.booked = False
 
-    if recommendations:
-        for idx, doc in enumerate(recommendations):
-            with st.expander(f"{idx+1}. Dr. {doc['Doctor']} - {doc['Specialization']}"):
-                st.markdown(f"**Chamber:** {doc['Chamber']}")
-                st.markdown("**Available Slots:**")
+st.subheader(st.session_state.doctor_message)
 
-                slot = st.selectbox(f"Select a slot for Dr. {doc['Doctor']}", options=doc['Slots'], key=f"slot_{idx}")
+if st.session_state.recommendations:
+    for idx, doc in enumerate(st.session_state.recommendations):
+        with st.expander(f"{idx+1}. Dr. {doc['Doctor']} - {doc['Specialization']}"):
+            st.markdown(f"**Chamber:** {doc['Chamber']}")
+            slot = st.selectbox(f"Select a slot for Dr. {doc['Doctor']}", options=doc['Slots'], key=f"slot_{idx}")
 
-                if st.button(f"Book Appointment with Dr. {doc['Doctor']}", key=f"book_{idx}"):
-                    st.session_state.booked = True
-                    st.session_state.booked_doctor = doc['Doctor']
-                    st.session_state.slot = slot
+            if st.button(f"Book Appointment with Dr. {doc['Doctor']}", key=f"book_{idx}"):
+                st.session_state.booked = True
+                st.session_state.booked_doctor = doc['Doctor']
+                st.session_state.slot = slot
 
 if st.session_state.booked:
     st.success(f"✅ Appointment Booked with Dr. {st.session_state.booked_doctor} at {st.session_state.slot}")
@@ -49,13 +52,11 @@ Doctor: {st.session_state.booked_doctor}
 Slot: {st.session_state.slot}
 """
 
-    # CSV Download
     csv_file = io.StringIO()
     csv_file.write("Doctor,Slot\n")
     csv_file.write(f"{st.session_state.booked_doctor},{st.session_state.slot}\n")
     st.download_button("⬇️ Download CSV", csv_file.getvalue(), "appointment.csv", mime="text/csv")
 
-    # PDF Download
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -66,7 +67,6 @@ Slot: {st.session_state.slot}
     pdf_output.seek(0)
     st.download_button("⬇️ Download PDF", pdf_output, file_name="appointment.pdf", mime="application/pdf")
 
-    # Send Email
     if patient_email:
         email_status = send_confirmation_email(patient_email, confirmation_text)
         st.write(f"📧 Attempting to send email to: {patient_email}")
