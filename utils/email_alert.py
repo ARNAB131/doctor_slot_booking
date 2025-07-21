@@ -1,10 +1,19 @@
 import smtplib
 from email.mime.text import MIMEText
+import os
 
 def send_confirmation_email(patient_email, message):
-    sender_email = "your_email@gmail.com"  # Replace with your email
-    sender_password = "your_app_password"  # Replace with your Gmail App Password
+    # Fetch credentials from environment variables
+    sender_email = os.getenv("SENDER_EMAIL")
+    sender_password = os.getenv("SENDER_PASSWORD")
     subject = "Appointment Confirmation"
+
+    print(f"📧 Attempting to send email to: {patient_email}")
+    print(f"From: {sender_email}")  # Debugging sender email
+
+    if not sender_email or not sender_password:
+        print("❌ Missing sender credentials in environment variables.")
+        return False
 
     msg = MIMEText(message)
     msg["Subject"] = subject
