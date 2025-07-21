@@ -62,9 +62,9 @@ Slot: {st.session_state.slot}
     pdf.set_font("Arial", size=12)
     for line in confirmation_text.split("\n"):
         pdf.cell(200, 10, txt=line.strip(), ln=True)
-    pdf_output = io.BytesIO()
-   pdf_bytes = pdf.output(dest='S').encode('latin1')
-pdf_output = io.BytesIO(pdf_bytes)
+
+    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    pdf_output = io.BytesIO(pdf_bytes)
     st.download_button("⬇️ Download PDF", pdf_output, file_name="appointment.pdf", mime="application/pdf")
 
     if patient_email:
@@ -76,6 +76,3 @@ pdf_output = io.BytesIO(pdf_bytes)
             st.error("❌ Failed to send email")
     else:
         st.warning("❗ No email provided, skipping confirmation email.")
-
-st.markdown("---")
-st.caption("Built with ❤️ by AI Slot Booking System")
