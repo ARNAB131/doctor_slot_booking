@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 from fpdf import FPDF
-from ai_booking import recommend_doctors
+from ai_booking import recommend_doctors, symptom_specialization_map
 from utils.email_alert import send_confirmation_email
 
 st.set_page_config(page_title="AI Slot Booking System", page_icon="🩺", layout="centered")
@@ -13,8 +13,10 @@ st.write("Easily find and book the best doctor slots using AI.")
 # Load doctor data
 doctor_df = pd.read_csv("doctors.csv")
 
-# User Input
-symptom = st.text_input("Enter your symptom or health issue:", "fever")
+# User Input with multiselect symptoms
+symptom_options = list(symptom_specialization_map.keys())
+symptoms = st.multiselect("Select your symptom(s):", options=symptom_options, default=["fever"])
+
 patient_email = st.text_input("Enter your email to receive confirmation:")
 
 if "recommendations" not in st.session_state:
@@ -24,8 +26,8 @@ if "recommendations" not in st.session_state:
     st.session_state.booked_doctor = ""
     st.session_state.slot = ""
 
-if st.button("🔍 Find Doctors"):
-    message, recommendations = recommend_doctors(symptom)
+if st.button("🔍 Find Doctors") and symptoms:
+    message, recommendations = recommend_doctors(symptoms)
     st.session_state.recommendations = recommendations
     st.session_state.doctor_message = message
     st.session_state.booked = False
@@ -50,11 +52,12 @@ if st.session_state.booked:
 Appointment Confirmed!
 Doctor: {st.session_state.booked_doctor}
 Slot: {st.session_state.slot}
+Symptoms: {', '.join(symptoms)}
 """
 
     csv_file = io.StringIO()
-    csv_file.write("Doctor,Slot\n")
-    csv_file.write(f"{st.session_state.booked_doctor},{st.session_state.slot}\n")
+    csv_file.write("Doctor,Slot,Symptoms\n")
+    csv_file.write(f"{st.session_state.booked_doctor},{st.session_state.slot},{'; '.join(symptoms)}\n")
     st.download_button("⬇️ Download CSV", csv_file.getvalue(), "appointment.csv", mime="text/csv")
 
     pdf = FPDF()
@@ -62,7 +65,6 @@ Slot: {st.session_state.slot}
     pdf.set_font("Arial", size=12)
     for line in confirmation_text.split("\n"):
         pdf.cell(200, 10, txt=line.strip(), ln=True)
-
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     pdf_output = io.BytesIO(pdf_bytes)
     st.download_button("⬇️ Download PDF", pdf_output, file_name="appointment.pdf", mime="application/pdf")
@@ -76,3 +78,6 @@ Slot: {st.session_state.slot}
             st.error("❌ Failed to send email")
     else:
         st.warning("❗ No email provided, skipping confirmation email.")
+
+st.markdown("---")
+st.caption("Built with ❤️ by AI Slot Booking System")
