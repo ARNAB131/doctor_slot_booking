@@ -10,15 +10,14 @@ import os
 import requests
 import spacy
 import json
-import re
 
-# Load spaCy model safely
+# Load spaCy model safely with auto-download
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    st.error("❗ spaCy model 'en_core_web_sm' not found. Please install it using:")
-    st.code("python -m spacy download en_core_web_sm")
-    st.stop()
+    from spacy.cli import download
+    download("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
 
 st.set_page_config(page_title="AI Slot Booking System", page_icon="🪺", layout="centered")
 
@@ -91,24 +90,24 @@ if st.session_state.voice_text:
                     pass
 
         for d in doctor_list:
-            if d.lower() in text.lower():
+            if d.lower() in text:
                 doctor = d
                 break
 
         for sym in symptom_list:
-            if re.search(rf"\\b{re.escape(sym.lower())}\\b", text.lower()):
+            if sym.lower() in text:
                 symptoms.append(sym)
 
         return name, doctor, symptoms, appt_date
 
-    name, doctor, symptoms, appt_date = parse_booking(st.session_state.voice_text)
+    name, doctor, symptoms_voice, appt_date = parse_booking(st.session_state.voice_text)
 
     if name:
         st.text_input("Patient Name:", value=name, key="voice_name")
     if doctor:
         st.text_input("Doctor:", value=doctor, key="voice_doctor")
-    if symptoms:
-        st.multiselect("Symptoms:", options=symptom_list, default=symptoms, key="voice_symptoms")
+    if symptoms_voice:
+        st.session_state.voice_symptoms = symptoms_voice
     if appt_date:
         st.date_input("Date:", value=appt_date, key="voice_date")
 
@@ -116,7 +115,12 @@ if st.session_state.voice_text:
 
 # Fallback manual input
 st.text_input("Patient Name:", key="manual_name")
-symptoms = st.multiselect("Select Symptoms:", options=symptom_list, key="manual_symptoms")
+
+if st.session_state.get("voice_symptoms"):
+    symptoms = st.multiselect("Select Symptoms:", options=symptom_list, default=st.session_state.voice_symptoms, key="manual_symptoms")
+else:
+    symptoms = st.multiselect("Select Symptoms:", options=symptom_list, key="manual_symptoms")
+
 selected_doctor = st.selectbox("Choose Doctor:", ["None"] + doctor_list, key="manual_doctor")
 appointment_date = st.date_input("Choose Date:", min_value=datetime.today(), key="manual_date")
 patient_email = st.text_input("Enter Email:")
@@ -155,13 +159,4 @@ if st.button("🔔 Book Appointment"):
         st.error(f"❌ Failed to save appointment data: {e}")
 
     st.success(f"✅ Appointment booked for {used_name} with Dr. {used_doctor} at {full_slot}")
-
-    # Validate email before sending
-    import re
-    if re.match(r"[^@]+@[^@]+\.[^@]+", patient_email):
-        send_confirmation_email(patient_email, f"Appointment with Dr. {used_doctor} confirmed at {full_slot}")
-    else:
-        st.warning("⚠️ Invalid email format. Confirmation email not sent.")
-
-st.markdown("---")
-st.caption("Built with ❤️ by AI Slot Booking System")
+    send_confirmation_email(patient_email, f"Appointment with Dr. {used_doctor} confirmed at {full_slot}")
