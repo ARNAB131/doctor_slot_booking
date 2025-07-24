@@ -4,25 +4,13 @@ import io
 from fpdf import FPDF
 from ai_booking import recommend_doctors, symptom_specialization_map, generate_slots
 from utils.email_alert import send_confirmation_email
-from datetime import datetime, timedelta
-import calendar
+from datetime import datetime
 import os
-import requests
-import spacy
-import json
 
-# Load spaCy model safely with auto-download
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    from spacy.cli import download
-    download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
-
-st.set_page_config(page_title="AI Slot Booking System", page_icon="🪺", layout="centered")
+st.set_page_config(page_title="AI Slot Booking System", page_icon="🩺", layout="centered")
 
 st.title("🤖 AI Doctor Slot Booking")
-st.write("Easily book appointments using smart voice + AI NLP.")
+st.write("Easily book appointments using AI and voice-to-text.")
 
 # Load doctor data
 doctor_df = pd.read_csv("doctors.csv")
@@ -31,105 +19,41 @@ doctor_df = pd.read_csv("doctors.csv")
 doctor_list = doctor_df['Doctor Name'].tolist()
 symptom_list = list(symptom_specialization_map.keys())
 
-# Real-time Full Sentence Voice to Text (via JS)
-st.markdown("""
-<script>
-  let recognition;
-  const startRecognition = () => {
-    recognition = new(window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const voiceText = event.results[0][0].transcript;
-      fetch(window.location.href, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({text: voiceText})
-      });
-    };
-    recognition.start();
-  }
-</script>
-<button onclick="startRecognition()">🎹 Start Voice Booking</button>
-""", unsafe_allow_html=True)
+# Inject JavaScript for voice input
+def inject_voice_input(field_id):
+    st.markdown(f"""
+    <script>
+    const insertVoice = () => {{
+        const recognition = new(window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = 'en-US';
+        recognition.onresult = (event) => {{
+            const transcript = event.results[0][0].transcript;
+            const input = window.parent.document.querySelector('input[id="{field_id}"]');
+            if(input) {{ input.value = transcript; input.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
+        }};
+        recognition.start();
+    }};
+    </script>
+    <button onclick="insertVoice()">🎤 Speak for {field_id}</button><br><br>
+    """, unsafe_allow_html=True)
 
-# Receive POST request and update session state
-try:
-    if st.request and st.request.method == "POST":
-        data = st.request.body
-        if data:
-            try:
-                payload = json.loads(data)
-                st.session_state.voice_text = payload.get("text", "")
-            except Exception as e:
-                st.error(f"Error processing voice input: {e}")
-except:
-    pass
+# Input fields with voice buttons
+name = st.text_input("Enter Patient Name:", key="patient_name")
+inject_voice_input("patient_name")
 
-# Backend: Accept full sentence input
-if "voice_text" not in st.session_state:
-    st.session_state.voice_text = ""
+symptom_text = st.text_input("Enter Symptoms (comma separated):", key="symptoms")
+inject_voice_input("symptoms")
 
-# Display and parse voice command
-if st.session_state.voice_text:
-    st.markdown(f"### 🎤 You said: `{st.session_state.voice_text}`")
+doctor_text = st.text_input("Enter Doctor's Name (optional):", key="doctor")
+inject_voice_input("doctor")
 
-    def parse_booking(text):
-        doc = nlp(text)
-        name, doctor, symptoms, appt_date = "", "", [], ""
-
-        for ent in doc.ents:
-            if ent.label_ == "PERSON":
-                name = ent.text
-            elif ent.label_ == "DATE":
-                try:
-                    import dateparser
-                    appt_date = dateparser.parse(ent.text)
-                except:
-                    pass
-
-        for d in doctor_list:
-            if d.lower() in text:
-                doctor = d
-                break
-
-        for sym in symptom_list:
-            if sym.lower() in text:
-                symptoms.append(sym)
-
-        return name, doctor, symptoms, appt_date
-
-    name, doctor, symptoms_voice, appt_date = parse_booking(st.session_state.voice_text)
-
-    if name:
-        st.text_input("Patient Name:", value=name, key="voice_name")
-    if doctor:
-        st.text_input("Doctor:", value=doctor, key="voice_doctor")
-    if symptoms_voice:
-        st.session_state.voice_symptoms = symptoms_voice
-    if appt_date:
-        st.date_input("Date:", value=appt_date, key="voice_date")
-
-    st.info("Auto-filled data from voice. Verify and book below.")
-
-# Fallback manual input
-st.text_input("Patient Name:", key="manual_name")
-
-if st.session_state.get("voice_symptoms"):
-    symptoms = st.multiselect("Select Symptoms:", options=symptom_list, default=st.session_state.voice_symptoms, key="manual_symptoms")
-else:
-    symptoms = st.multiselect("Select Symptoms:", options=symptom_list, key="manual_symptoms")
-
-selected_doctor = st.selectbox("Choose Doctor:", ["None"] + doctor_list, key="manual_doctor")
-appointment_date = st.date_input("Choose Date:", min_value=datetime.today(), key="manual_date")
+appointment_date = st.date_input("Choose Appointment Date:", min_value=datetime.today())
 patient_email = st.text_input("Enter Email:")
 
 if st.button("🔔 Book Appointment"):
-    used_name = st.session_state.get("voice_name") or st.session_state.manual_name
-    used_doctor = st.session_state.get("voice_doctor") or st.session_state.manual_doctor
-    used_symptoms = st.session_state.get("voice_symptoms") or st.session_state.manual_symptoms
-    used_date = st.session_state.get("voice_date") or st.session_state.manual_date
+    used_name = name
+    used_symptoms = [s.strip() for s in symptom_text.split(",") if s.strip()]
+    used_doctor = doctor_text
 
     visiting = doctor_df[doctor_df['Doctor Name'] == used_doctor]['Visiting Time'].values
     if visiting.any():
@@ -138,9 +62,8 @@ if st.button("🔔 Book Appointment"):
     else:
         used_slot = "Slot Not Available"
 
-    full_slot = f"{used_slot} on {used_date.strftime('%d %B %Y')}"
+    full_slot = f"{used_slot} on {appointment_date.strftime('%d %B %Y')}"
 
-    # Save to appointments
     df_new = pd.DataFrame([{
         "Patient Name": used_name,
         "Email": patient_email,
