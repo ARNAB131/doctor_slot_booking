@@ -5,9 +5,8 @@ from fpdf import FPDF
 from ai_booking import recommend_doctors, symptom_specialization_map, generate_slots
 from utils.email_alert import send_confirmation_email
 from datetime import datetime, timedelta
-import calendar
-import os
 import streamlit.components.v1 as components
+import os
 
 st.set_page_config(page_title="AI Slot Booking System", page_icon="🩺", layout="centered")
 
@@ -17,47 +16,56 @@ st.write("Easily find and book the best doctor slots using AI.")
 # Load doctor data
 doctor_df = pd.read_csv("doctors.csv")
 
-# Patient Name Input
+# Patient name
 patient_name = st.text_input("Enter your name:")
 
-# User Input with multiselect symptoms + voice input
-symptom_options = list(symptom_specialization_map.keys())
-
-st.markdown("### 🤒 Select your symptom(s):")
-cols = st.columns([4, 1])
-with cols[0]:
-    symptoms = st.multiselect("", options=symptom_options, key="symptoms")
-
-with cols[1]:
-    st.markdown("<div style='margin-top: 0.5rem;'>", unsafe_allow_html=True)
-    components.html("""
-    <button onclick="recordAndSend()" style="padding:8px 12px;background-color:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">
-      🎙️ Voice Input
-    </button>
+# Voice-to-text button and JavaScript
+st.markdown("### 🎙️ Voice Input for Symptoms")
+components.html(
+    """
+    <button onclick="startDictation()" style="padding: 8px 16px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 5px;">🎤 Start Voice Input</button>
+    <p id="output" style="margin-top: 10px; font-weight: bold;"></p>
     <script>
-    async function recordAndSend() {
+    function startDictation() {
         if (!('webkitSpeechRecognition' in window)) {
-            alert("Sorry, your browser doesn't support Speech Recognition.");
+            document.getElementById("output").innerText = "❌ Speech recognition not supported in this browser.";
             return;
         }
+
         const recognition = new webkitSpeechRecognition();
-        recognition.lang = 'en-US';
+        recognition.lang = "en-US";
+        recognition.continuous = false;
         recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
+
+        recognition.onstart = function() {
+            document.getElementById("output").innerText = "🎙️ Listening...";
+        };
+
         recognition.onresult = function(event) {
-            const result = event.results[0][0].transcript;
-            const stream = new EventSource(`/streamlit/voice_result?result=${result}`);
-        }
+            const transcript = event.results[0][0].transcript;
+            document.getElementById("output").innerText = "✅ You said: " + transcript;
+
+            const streamlitInput = window.parent.document.querySelectorAll('input[type="text"]')[0];
+            streamlitInput.value = transcript;
+            streamlitInput.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
         recognition.onerror = function(event) {
-            alert("Error: " + event.error);
-        }
+            document.getElementById("output").innerText = "❌ Error: " + event.error;
+        };
+
         recognition.start();
     }
     </script>
-    """, height=50)
-    st.markdown("</div>", unsafe_allow_html=True)
+    """,
+    height=180,
+)
 
-# Optional general doctor dropdown booking
+# Symptom input
+symptom_options = list(symptom_specialization_map.keys())
+symptoms = st.multiselect("Select your symptom(s):", options=symptom_options)
+
+# Direct booking
 st.markdown("---")
 st.subheader("📋 Or Book Directly by Choosing a Doctor")
 doctor_names = doctor_df['Doctor Name'].unique().tolist()
@@ -81,10 +89,10 @@ if selected_doctor != "None":
         st.session_state.slot = f"{direct_slot} on {selected_date.strftime('%d %B %Y')}"
         st.session_state.symptoms_used = symptoms or ["Direct Booking"]
 
-# Email input
+# Email
 patient_email = st.text_input("Enter your email to receive confirmation:")
 
-# Recommendation based on symptoms
+# Booking logic
 if "recommendations" not in st.session_state:
     st.session_state.recommendations = []
     st.session_state.doctor_message = ""
@@ -115,6 +123,7 @@ if st.session_state.recommendations:
                 st.session_state.slot = f"{slot} on {appt_date.strftime('%d %B %Y')}"
                 st.session_state.symptoms_used = symptoms
 
+# Confirmation
 if st.session_state.booked:
     st.success(f"✅ Appointment Booked with Dr. {st.session_state.booked_doctor} at {st.session_state.slot}")
 
@@ -126,6 +135,7 @@ Slot: {st.session_state.slot}
 Symptoms: {', '.join(st.session_state.symptoms_used)}
 """
 
+    # Save appointment
     appointment_df = pd.DataFrame([{
         "Patient Name": patient_name,
         "Email": patient_email,
@@ -139,11 +149,13 @@ Symptoms: {', '.join(st.session_state.symptoms_used)}
     else:
         appointment_df.to_csv("appointments.csv", mode="w", header=True, index=False)
 
+    # CSV Download
     csv_file = io.StringIO()
     csv_file.write("Doctor,Slot,Symptoms\n")
     csv_file.write(f"{st.session_state.booked_doctor},{st.session_state.slot},{'; '.join(st.session_state.symptoms_used)}\n")
     st.download_button("⬇️ Download CSV", csv_file.getvalue(), "appointment.csv", mime="text/csv")
 
+    # PDF Download
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
@@ -153,6 +165,7 @@ Symptoms: {', '.join(st.session_state.symptoms_used)}
     pdf_output = io.BytesIO(pdf_bytes)
     st.download_button("⬇️ Download PDF", pdf_output, file_name="appointment.pdf", mime="application/pdf")
 
+    # Email
     if patient_email:
         email_status = send_confirmation_email(patient_email, confirmation_text)
         st.write(f"📧 Attempting to send email to: {patient_email}")
@@ -189,8 +202,7 @@ if os.path.exists("appointments.csv"):
     for _, row in upcoming.iterrows():
         st.info(f"📅 {row['Parsed Date'].strftime('%d %b %Y')} - {row['Patient Name']} with Dr. {row['Doctor']}")
 
-    csv_download = df.to_csv(index=False).encode('utf-8')
-    st.download_button("⬇️ Export CSV", csv_download, "appointments_admin_view.csv", mime="text/csv")
+    st.download_button("⬇️ Export CSV", df.to_csv(index=False).encode('utf-8'), "appointments_admin_view.csv", mime="text/csv")
 
     st.markdown("### 📅 Calendar View")
     if not df['Parsed Date'].isnull().all():
