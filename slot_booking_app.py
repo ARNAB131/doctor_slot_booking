@@ -4,8 +4,10 @@ import io
 from fpdf import FPDF
 from ai_booking import recommend_doctors, symptom_specialization_map, generate_slots
 from utils.email_alert import send_confirmation_email
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
+import speech_recognition as sr
+import os
 
 st.set_page_config(page_title="AI Slot Booking System", page_icon="🩺", layout="centered")
 
@@ -15,9 +17,27 @@ st.write("Easily find and book the best doctor slots using AI.")
 # Load doctor data
 doctor_df = pd.read_csv("doctors.csv")
 
+# Patient Name Input
+patient_name = st.text_input("Enter your name:")
+
+# Voice-to-Text Input
+st.markdown("### 🎙️ Voice Input for Symptoms (Optional)")
+if st.button("Start Voice Input"):
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        st.info("Listening... Please speak your symptoms.")
+        try:
+            audio = recognizer.listen(source, timeout=5)
+            voice_text = recognizer.recognize_google(audio)
+            st.success(f"You said: {voice_text}")
+            st.session_state.voice_symptoms = [s.strip() for s in voice_text.split(",")]
+        except Exception as e:
+            st.error(f"Voice recognition failed: {e}")
+
 # User Input with multiselect symptoms
 symptom_options = list(symptom_specialization_map.keys())
-symptoms = st.multiselect("Select your symptom(s):", options=symptom_options)
+voice_prefilled = st.session_state.get("voice_symptoms", [])
+symptoms = st.multiselect("Select your symptom(s):", options=symptom_options, default=voice_prefilled)
 
 # Optional general doctor dropdown booking
 st.markdown("---")
@@ -26,6 +46,7 @@ doctor_names = doctor_df['Doctor Name'].unique().tolist()
 selected_doctor = st.selectbox("Choose a doctor to book directly (optional):", ["None"] + doctor_names)
 
 direct_slot = ""
+selected_date = None
 if selected_doctor != "None":
     selected_info = doctor_df[doctor_df['Doctor Name'] == selected_doctor].iloc[0]
     st.markdown(f"**Specialization:** {selected_info['Specialization']}")
@@ -82,10 +103,25 @@ if st.session_state.booked:
 
     confirmation_text = f"""
 Appointment Confirmed!
+Name: {patient_name}
 Doctor: {st.session_state.booked_doctor}
 Slot: {st.session_state.slot}
 Symptoms: {', '.join(st.session_state.symptoms_used)}
 """
+
+    # Save to real-time CSV
+    appointment_df = pd.DataFrame([{
+        "Patient Name": patient_name,
+        "Email": patient_email,
+        "Symptoms": '; '.join(st.session_state.symptoms_used),
+        "Doctor": st.session_state.booked_doctor,
+        "Slot": st.session_state.slot,
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }])
+    if os.path.exists("appointments.csv"):
+        appointment_df.to_csv("appointments.csv", mode="a", header=False, index=False)
+    else:
+        appointment_df.to_csv("appointments.csv", mode="w", header=True, index=False)
 
     csv_file = io.StringIO()
     csv_file.write("Doctor,Slot,Symptoms\n")
@@ -110,6 +146,50 @@ Symptoms: {', '.join(st.session_state.symptoms_used)}
             st.error("❌ Failed to send email")
     else:
         st.warning("❗ No email provided, skipping confirmation email.")
+
+# Admin Dashboard
+st.markdown("---")
+st.header("📊 Admin Dashboard - All Appointments")
+if os.path.exists("appointments.csv"):
+    df = pd.read_csv("appointments.csv")
+
+    # Doctor filter
+    st.markdown("### 🔍 Filter by Doctor")
+    doctor_filter = st.selectbox("Select Doctor:", options=["All"] + sorted(df["Doctor"].unique().tolist()))
+    if doctor_filter != "All":
+        df = df[df["Doctor"] == doctor_filter]
+
+    st.dataframe(df)
+
+    # Patient history
+    st.markdown("### 🧾 View Patient History")
+    patient_query = st.text_input("Search by Patient Name or Email:")
+    if patient_query:
+        filtered = df[df['Patient Name'].str.contains(patient_query, case=False) | df['Email'].str.contains(patient_query, case=False)]
+        st.dataframe(filtered)
+
+    # Notification Preview
+    st.markdown("### ⏰ Upcoming Appointment Reminders")
+    today = datetime.today()
+    df['Parsed Date'] = pd.to_datetime(df['Slot'].str.extract(r'on (.+)$')[0], errors='coerce')
+    upcoming = df[df['Parsed Date'].between(today, today + timedelta(days=3))]
+    for _, row in upcoming.iterrows():
+        st.info(f"📅 {row['Parsed Date'].strftime('%d %b %Y')} - {row['Patient Name']} with Dr. {row['Doctor']}")
+
+    # Export
+    csv_download = df.to_csv(index=False).encode('utf-8')
+    st.download_button("⬇️ Export CSV", csv_download, "appointments_admin_view.csv", mime="text/csv")
+
+    # Calendar view
+    st.markdown("### 📅 Calendar View")
+    if not df['Parsed Date'].isnull().all():
+        grouped = df.groupby(['Parsed Date', 'Doctor']).size().reset_index(name='Appointments')
+        for date, group in grouped.groupby('Parsed Date'):
+            st.markdown(f"#### {date.strftime('%d %B %Y')}")
+            for _, row in group.iterrows():
+                st.write(f"👨‍⚕️ {row['Doctor']} - {row['Appointments']} appointments")
+else:
+    st.info("No appointments booked yet.")
 
 st.markdown("---")
 st.caption("Built with ❤️ by AI Slot Booking System")
