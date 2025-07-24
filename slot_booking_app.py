@@ -6,8 +6,8 @@ from ai_booking import recommend_doctors, symptom_specialization_map, generate_s
 from utils.email_alert import send_confirmation_email
 from datetime import datetime, timedelta
 import calendar
-import speech_recognition as sr
 import os
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="AI Slot Booking System", page_icon="🩺", layout="centered")
 
@@ -20,24 +20,42 @@ doctor_df = pd.read_csv("doctors.csv")
 # Patient Name Input
 patient_name = st.text_input("Enter your name:")
 
-# Voice-to-Text Input
-st.markdown("### 🎙️ Voice Input for Symptoms (Optional)")
-if st.button("Start Voice Input"):
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.info("Listening... Please speak your symptoms.")
-        try:
-            audio = recognizer.listen(source, timeout=5)
-            voice_text = recognizer.recognize_google(audio)
-            st.success(f"You said: {voice_text}")
-            st.session_state.voice_symptoms = [s.strip() for s in voice_text.split(",")]
-        except Exception as e:
-            st.error(f"Voice recognition failed: {e}")
-
-# User Input with multiselect symptoms
+# User Input with multiselect symptoms + voice input
 symptom_options = list(symptom_specialization_map.keys())
-voice_prefilled = st.session_state.get("voice_symptoms", [])
-symptoms = st.multiselect("Select your symptom(s):", options=symptom_options, default=voice_prefilled)
+
+st.markdown("### 🤒 Select your symptom(s):")
+cols = st.columns([4, 1])
+with cols[0]:
+    symptoms = st.multiselect("", options=symptom_options, key="symptoms")
+
+with cols[1]:
+    st.markdown("<div style='margin-top: 0.5rem;'>", unsafe_allow_html=True)
+    components.html("""
+    <button onclick="recordAndSend()" style="padding:8px 12px;background-color:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">
+      🎙️ Voice Input
+    </button>
+    <script>
+    async function recordAndSend() {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("Sorry, your browser doesn't support Speech Recognition.");
+            return;
+        }
+        const recognition = new webkitSpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.onresult = function(event) {
+            const result = event.results[0][0].transcript;
+            const stream = new EventSource(`/streamlit/voice_result?result=${result}`);
+        }
+        recognition.onerror = function(event) {
+            alert("Error: " + event.error);
+        }
+        recognition.start();
+    }
+    </script>
+    """, height=50)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # Optional general doctor dropdown booking
 st.markdown("---")
@@ -54,7 +72,6 @@ if selected_doctor != "None":
     slots = generate_slots(selected_info['Visiting Time'])
     direct_slot = st.selectbox("Select a slot:", slots, key="direct_slot")
 
-    # 📅 Calendar View
     today = datetime.today()
     selected_date = st.date_input("Choose appointment date:", min_value=today)
 
@@ -109,7 +126,6 @@ Slot: {st.session_state.slot}
 Symptoms: {', '.join(st.session_state.symptoms_used)}
 """
 
-    # Save to real-time CSV
     appointment_df = pd.DataFrame([{
         "Patient Name": patient_name,
         "Email": patient_email,
@@ -153,7 +169,6 @@ st.header("📊 Admin Dashboard - All Appointments")
 if os.path.exists("appointments.csv"):
     df = pd.read_csv("appointments.csv")
 
-    # Doctor filter
     st.markdown("### 🔍 Filter by Doctor")
     doctor_filter = st.selectbox("Select Doctor:", options=["All"] + sorted(df["Doctor"].unique().tolist()))
     if doctor_filter != "All":
@@ -161,14 +176,12 @@ if os.path.exists("appointments.csv"):
 
     st.dataframe(df)
 
-    # Patient history
     st.markdown("### 🧾 View Patient History")
     patient_query = st.text_input("Search by Patient Name or Email:")
     if patient_query:
         filtered = df[df['Patient Name'].str.contains(patient_query, case=False) | df['Email'].str.contains(patient_query, case=False)]
         st.dataframe(filtered)
 
-    # Notification Preview
     st.markdown("### ⏰ Upcoming Appointment Reminders")
     today = datetime.today()
     df['Parsed Date'] = pd.to_datetime(df['Slot'].str.extract(r'on (.+)$')[0], errors='coerce')
@@ -176,11 +189,9 @@ if os.path.exists("appointments.csv"):
     for _, row in upcoming.iterrows():
         st.info(f"📅 {row['Parsed Date'].strftime('%d %b %Y')} - {row['Patient Name']} with Dr. {row['Doctor']}")
 
-    # Export
     csv_download = df.to_csv(index=False).encode('utf-8')
     st.download_button("⬇️ Export CSV", csv_download, "appointments_admin_view.csv", mime="text/csv")
 
-    # Calendar view
     st.markdown("### 📅 Calendar View")
     if not df['Parsed Date'].isnull().all():
         grouped = df.groupby(['Parsed Date', 'Doctor']).size().reset_index(name='Appointments')
