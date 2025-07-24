@@ -1,5 +1,5 @@
-streamlit
-pandas
-fpdf
-SpeechRecognition
-
+streamlit>=1.26.0
+pandas>=1.5.3
+fpdf>=1.7.2
+openai
+email-validator
