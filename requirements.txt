@@ -1,9 +1,9 @@
 streamlit==1.26.0
-pandas==2.2.2
 fpdf==1.7.2
-spacy==3.8.7
-dateparser==1.2.0
-email-validator==2.1.0.post1
-validators==0.35.0
+pandas==1.5.3
+spacy==3.7.5
+email-validator==2.2.0
 requests==2.31.0
-numpy==1.26.4
+dateparser==1.2.0
+validators==0.35.0
+scikit-learn==1.1.3
