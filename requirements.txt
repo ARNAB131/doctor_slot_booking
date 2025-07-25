@@ -1,4 +1,10 @@
 streamlit==1.26.0
 pandas==1.5.3
+numpy
 fpdf==1.7.2
-requests==2.31.0
+requests
+pyarrow
+python-dateutil
+validators
+watchdog
+email-validator
