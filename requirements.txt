@@ -1,5 +1,5 @@
-streamlit
-pandas
-fpdf
-datetime
-requests
+streamlit==1.26.0
+pandas==1.5.3
+fpdf==1.7.2
+requests==2.31.0
+pillow==9.5.0
