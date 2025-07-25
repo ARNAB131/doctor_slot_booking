@@ -1,9 +1,5 @@
-streamlit==1.26.0
-pandas==1.5.3
-fpdf==1.7.2
-requests
-python-dateutil
+streamlit>=1.26.0
+pandas>=1.5.3
+fpdf>=1.7.2
+openai
 email-validator
-watchdog
-PyPDF2
-pillow==9.5.0 
