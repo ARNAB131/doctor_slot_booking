@@ -6,4 +6,4 @@ python-dateutil
 email-validator
 watchdog
 PyPDF2
-pillow==9.4.0 
+pillow==9.5.0 
